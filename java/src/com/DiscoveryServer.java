@@ -388,6 +388,7 @@ public class DiscoveryServer {
             System.exit(JOIN_ERR);
         }
 
+        //Prevedere un sistema di uscita del DS, con segnalazione ai RowSwapRegistrati che il DS termina?
 
     }
 
