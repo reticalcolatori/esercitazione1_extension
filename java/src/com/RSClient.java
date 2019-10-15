@@ -2,6 +2,8 @@ package com;
 
 import java.io.*;
 import java.net.*;
+import java.util.NoSuchElementException;
+import java.util.StringTokenizer;
 
 public class RSClient {
 
@@ -19,9 +21,11 @@ public class RSClient {
         return 0x400 < port && port <= 0xFFFF;
     }
 
-    private InetAddress serverAddress;
-    private final int serverPort;
-    private int servicePort = -1;
+    private final InetAddress addressDS;
+    private final int portDS;
+
+    private InetAddress addressRS = null;
+    private int portRS = -1;
 
     private boolean networkState = false;
 
@@ -34,31 +38,35 @@ public class RSClient {
         this(DEFAULT_serverIP, DEFAULT_serverPort);
     }
 
-    public RSClient(String serverIP, int serverPort) throws UnknownHostException, IllegalArgumentException {
-        this(InetAddress.getByName(serverIP), serverPort);
+    public RSClient(String serverIP, int portDS) throws UnknownHostException, IllegalArgumentException {
+        this(InetAddress.getByName(serverIP), portDS);
     }
 
-    public RSClient(InetAddress serverAddress, int serverPort) throws IllegalArgumentException {
-        this.serverAddress = serverAddress;
+    public RSClient(InetAddress addressDS, int portDS) throws IllegalArgumentException {
+        this.addressDS = addressDS;
 
         //Controllo che la porta sia non standard e nel range di 16-bit.
-        if (!(isPortValid(serverPort))) {
+        if (!(isPortValid(portDS))) {
             throw new IllegalArgumentException("Porta non valida");
         }
 
-        this.serverPort = serverPort;
+        this.portDS = portDS;
     }
 
-    public InetAddress getServerAddress() {
-        return serverAddress;
+    public InetAddress getAddressDS() {
+        return addressDS;
     }
 
-    public int getServerPort() {
-        return serverPort;
+    public int getPortDS() {
+        return portDS;
     }
 
-    public int getServicePort() {
-        return servicePort;
+    public InetAddress getAddressRS() {
+        return addressRS;
+    }
+
+    public int getPortRS() {
+        return portRS;
     }
 
     /**
@@ -70,7 +78,7 @@ public class RSClient {
         socket = new DatagramSocket();
         //Se voglio imposto il timeout:
         //socket.setSoTimeout(DEFAULT_timeout);
-        packet = new DatagramPacket(emptyBuffer, 0, emptyBuffer.length, serverAddress, serverPort);
+        packet = new DatagramPacket(emptyBuffer, 0, emptyBuffer.length, addressDS, portDS);
         networkState = true;
     }
 
@@ -90,8 +98,8 @@ public class RSClient {
         if (!networkState) throw new IllegalStateException("Bisogna inizializzare la rete prima");
 
         //Imposto il pacchetto volto al Discovery.
-        packet.setAddress(serverAddress);
-        packet.setPort(serverPort);
+        packet.setAddress(addressDS);
+        packet.setPort(portDS);
 
         //Imposto la richiesta.
         try (ByteArrayOutputStream byteStream = new ByteArrayOutputStream()) {
@@ -114,11 +122,12 @@ public class RSClient {
             try (DataInputStream dataStream = new DataInputStream(byteStream)) {
                 //Ricavo la porta del servizio.
                 String tmpString = dataStream.readUTF();
-                int tmpPort = -1;
+                StringTokenizer tokenizer = new StringTokenizer(tmpString, ":");
 
-                try {
-                    tmpPort = Integer.parseInt(tmpString);
-                }catch(NumberFormatException e){
+                try{
+                    this.addressRS = InetAddress.getByName(tokenizer.nextToken());
+                    this.portRS = Integer.parseInt(tokenizer.nextToken());
+                }catch (UnknownHostException | NoSuchElementException | NumberFormatException e){
                     return tmpString;
                 }
 
@@ -126,10 +135,14 @@ public class RSClient {
                 //Controllo che la porta sia non standard e nel range di 16-bit.
                 //Se il nome file non fosse fra quelli noti al DiscoveryServer, il
                 //DiscoveryServer invia esito negativo e il client termina.
-                if (!(isPortValid(tmpPort)))
-                    return "Porta non valida";
 
-                this.servicePort = tmpPort;
+                //Controllo non necessario.
+//                if (!(isPortValid(tmpPort)))
+//                    return "Porta non valida";
+//
+//                this.portRS = tmpPort;
+
+
                 return null;
             }
         }
@@ -159,7 +172,7 @@ public class RSClient {
         if (!networkState) throw new IllegalStateException("Bisogna inizializzare la rete prima");
 
         //Devo verificare che sia già stato trovato il servizio.
-        if (!isPortValid(servicePort)) throw new IllegalStateException("Bisogna cercare il servizio prima");
+        if (!isPortValid(portRS)) throw new IllegalStateException("Bisogna cercare il servizio prima");
 
         //Ora posso chidere al servizio di swappare le righe:
 
@@ -173,7 +186,8 @@ public class RSClient {
         }
 
         //Invio la richiesta
-        packet.setPort(servicePort);
+        packet.setAddress(addressRS);
+        packet.setPort(portRS);
         socket.send(packet);
 
         //Attendo risposta.
@@ -251,7 +265,7 @@ public class RSClient {
             System.exit(SERVICE_ERR);
         }
 
-        System.out.println("Servizio trovato: " + client.getServicePort());
+        System.out.println("Servizio trovato: " + client.getPortRS());
 
         //REPL while
 

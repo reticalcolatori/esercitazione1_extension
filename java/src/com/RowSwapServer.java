@@ -35,9 +35,9 @@ public class RowSwapServer implements Runnable {
     private static final int RESULT_MALFORMED_REQUEST = 1;
     private static final int RESULT_UNKNOWN_COMMAND = 2;
     private static final int RESULT_FILENAME_IN_USE = 3;
-    private static final int RESULT_PORT_IN_USE = 4;
+    private static final int RESULT_PAIR_IN_USE = 4;
     private static final int RESULT_FILENAME_NOT_IN_USE = 5;
-    private static final int RESULT_PORT_NOT_CONSISTENT = 6;
+    private static final int RESULT_PAIR_NOT_CONSISTENT = 6;
 
     public static String getResultString(int result) {
         switch (result) {
@@ -50,13 +50,13 @@ public class RowSwapServer implements Runnable {
             //Errori REGISTER
             case RESULT_FILENAME_IN_USE:
                 return "FILENAME IN USO";
-            case RESULT_PORT_IN_USE:
-                return "PORTA RS IN USO";
+            case RESULT_PAIR_IN_USE:
+                return "IP+PORTA RS IN USO";
             //Errori DISMISS
             case RESULT_FILENAME_NOT_IN_USE:
                 return "FILENAME NON IN USO";
-            case RESULT_PORT_NOT_CONSISTENT:
-                return "PORTA NON COINCIDENTE CON FILENAME";
+            case RESULT_PAIR_NOT_CONSISTENT:
+                return "IP+PORTA NON COINCIDENTE CON FILENAME";
 
             default:
                 return null;
@@ -292,7 +292,7 @@ public class RowSwapServer implements Runnable {
             //Apro una richiesta di registrazione al discovery.
 
             try (ByteArrayOutputStream boStream = new ByteArrayOutputStream(); DataOutputStream doStream = new DataOutputStream(boStream)) {
-                doStream.writeUTF(CMD_REGISTER + ":" + addressRS.getHostAddress() + ":" + portRS);
+                doStream.writeUTF(CMD_REGISTER + ":" + filename + ":" + addressRS.getHostAddress() + ":" + portRS);
 
                 packet.setAddress(addressDS);
                 packet.setPort(portRS);
@@ -374,7 +374,7 @@ public class RowSwapServer implements Runnable {
             }
 
             //Anche se il discovery mi da errore lo interpreto come una cancellazione.
-            isRegistered = !(discoveryResult == RESULT_OK || discoveryResult == RESULT_FILENAME_NOT_IN_USE || discoveryResult == RESULT_PORT_NOT_CONSISTENT);
+            isRegistered = !(discoveryResult == RESULT_OK || discoveryResult == RESULT_FILENAME_NOT_IN_USE || discoveryResult == RESULT_PAIR_NOT_CONSISTENT);
         }
     }
 

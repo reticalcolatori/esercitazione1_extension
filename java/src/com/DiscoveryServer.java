@@ -1,12 +1,7 @@
 package com;
 
 import java.io.*;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.SocketAddress;
-import java.net.SocketException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
+import java.net.*;
 import java.util.HashMap;
 import java.util.NoSuchElementException;
 import java.util.StringTokenizer;
@@ -23,7 +18,7 @@ public class DiscoveryServer {
     private static final int JOIN_ERR = 8;
 
     //Protocollo DS <--> RowSwapServer
-    //Formato richiesta: CMD:FILENAME:PORT
+    //Formato richiesta: CMD:FILENAME:IP:PORT
     //Formato risposta: intero
 
     private static final String CMD_REGISTER = "REGISTER";
@@ -33,9 +28,9 @@ public class DiscoveryServer {
     private static final int RESULT_MALFORMED_REQUEST = 1;
     private static final int RESULT_UNKNOWN_COMMAND = 2;
     private static final int RESULT_FILENAME_IN_USE = 3;
-    private static final int RESULT_PORT_IN_USE = 4;
+    private static final int RESULT_PAIR_IN_USE = 4;
     private static final int RESULT_FILENAME_NOT_IN_USE = 5;
-    private static final int RESULT_PORT_NOT_CONSISTENT = 6;
+    private static final int RESULT_PAIR_NOT_CONSISTENT = 6;
 
 
     private static boolean isPortValid(int port) {
@@ -103,11 +98,11 @@ public class DiscoveryServer {
                 }
 
                 try (ByteArrayOutputStream boStream = new ByteArrayOutputStream(); DataOutputStream doStream = new DataOutputStream(boStream)) {
-                    int porta = getPortByFilename(richiesta); //trovo porta corrisp. se esiste
-                    if (porta == -1) { //se il file non esiste lo comunico
+                    InetAddressPortWrapper wrapper = getAddressPortByFilename(richiesta); //trovo porta corrisp. se esiste
+                    if (wrapper == null) { //se il file non esiste lo comunico
                         doStream.writeUTF("Il file richiesto non esiste, quindi non c'è una porta corrispondente\n");
                     } else { //altrimenti restituisco la porta corrisp.
-                        doStream.writeUTF(Integer.toString(porta));
+                        doStream.writeUTF(wrapper.getAddress().getHostAddress()+":"+wrapper.getPort());
                     }
 
                     //setto il contenuto della risposta
@@ -193,7 +188,7 @@ public class DiscoveryServer {
                 }
 
                 //Decodifico la richiesta, la eseguo e preparo una risposta.
-                StringTokenizer tokenizer = new StringTokenizer(request);
+                StringTokenizer tokenizer = new StringTokenizer(request, ":");
                 //Resetto la risposta.
                 response = RESULT_OK;
 
@@ -201,18 +196,21 @@ public class DiscoveryServer {
                 try {
                     String cmd = tokenizer.nextToken();
                     String filename = tokenizer.nextToken();
+                    String address = tokenizer.nextToken();
                     int port = Integer.parseInt(tokenizer.nextToken());
+                    InetAddressPortWrapper wrapper = new InetAddressPortWrapper(address, port);
+
 
                     //Parsing
                     if (cmd.equalsIgnoreCase(CMD_REGISTER)) {
                         //Verifico la disponibilità del filename
                         if (!reference.isFilenameInUse(filename)) {
                             //Verifico la disponibilità della porta.
-                            if (!reference.isPortInUse(port)) {
+                            if (!reference.isAddressPortInUse(wrapper)) {
                                 //Allora posso registrare il row swap server
-                                reference.putFilenamePortPair(filename, port);
+                                reference.putFilenamePortPair(filename, wrapper);
                             } else {
-                                response = RESULT_PORT_IN_USE;
+                                response = RESULT_PAIR_IN_USE;
                             }
                         } else {
                             response = RESULT_FILENAME_IN_USE;
@@ -221,11 +219,11 @@ public class DiscoveryServer {
                         //Verifico la disponibilità del filename.
                         if (reference.isFilenameInUse(filename)) {
                             //Verifico che filename e porta coincidino
-                            if (reference.getPortByFilename(filename) == port) {
+                            if (reference.getAddressPortByFilename(filename).equals(wrapper)) {
                                 //Allora posso cancellare il row swap server
                                 reference.removeFilenamePortPair(filename);
                             } else {
-                                response = RESULT_PORT_NOT_CONSISTENT;
+                                response = RESULT_PAIR_NOT_CONSISTENT;
                             }
                         } else {
                             response = RESULT_FILENAME_NOT_IN_USE;
@@ -233,7 +231,7 @@ public class DiscoveryServer {
                     } else {
                         response = RESULT_UNKNOWN_COMMAND;
                     }
-                } catch (NoSuchElementException | NumberFormatException e) {
+                } catch (NoSuchElementException | NumberFormatException | UnknownHostException e) {
                     response = RESULT_MALFORMED_REQUEST;
                 }
 
@@ -256,7 +254,40 @@ public class DiscoveryServer {
         }
     }
 
-    private final HashMap<String, Integer> mappaPorteRowSwapServer = new HashMap<>();
+    //Immutable Object
+    private class InetAddressPortWrapper{
+        private InetAddress address;
+        private int port;
+
+        public InetAddressPortWrapper(String address, int port) throws UnknownHostException {
+            this(InetAddress.getByName(address), port);
+        }
+
+        public InetAddressPortWrapper(InetAddress address, int port) {
+            this.address = address;
+            this.port = port;
+        }
+
+        public InetAddress getAddress() {
+            return address;
+        }
+
+        public int getPort() {
+            return port;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if(obj instanceof InetAddressPortWrapper){
+                InetAddressPortWrapper other = (InetAddressPortWrapper)obj;
+
+                return getAddress().equals(other.getAddress()) && getPort() == other.getPort();
+            }
+            return false;
+        }
+    }
+
+    private final HashMap<String, InetAddressPortWrapper> mappaAddressPortRowSwapServer = new HashMap<>();
 
     private final DSClientHandler clientHandler;
     private final DSRowSwapHandler rowSwapHandler;
@@ -277,42 +308,42 @@ public class DiscoveryServer {
         rowSwapHandler.join();
     }
 
-    public void putFilenamePortPair(String filename, int port) {
-        if (isPortValid(port)) {
-            synchronized (mappaPorteRowSwapServer) {
-                mappaPorteRowSwapServer.put(filename, port);
+    public void putFilenamePortPair(String filename, InetAddressPortWrapper wrapper) {
+        if (isPortValid(wrapper.getPort())) {
+            synchronized (mappaAddressPortRowSwapServer) {
+                mappaAddressPortRowSwapServer.put(filename, wrapper);
             }
         }
     }
 
     public void removeFilenamePortPair(String filename) {
-        synchronized (mappaPorteRowSwapServer) {
-            mappaPorteRowSwapServer.remove(filename);
+        synchronized (mappaAddressPortRowSwapServer) {
+            mappaAddressPortRowSwapServer.remove(filename);
         }
     }
 
-    public int getPortByFilename(String filename) {
-        Integer port;
+    public InetAddressPortWrapper getAddressPortByFilename(String filename) {
+        InetAddressPortWrapper wrapper;
 
-        synchronized (mappaPorteRowSwapServer) {
-            port = mappaPorteRowSwapServer.getOrDefault(filename, -1);
+        synchronized (mappaAddressPortRowSwapServer) {
+             wrapper = mappaAddressPortRowSwapServer.getOrDefault(filename, null);
         }
 
-        return port;
+        return wrapper;
     }
 
     public boolean isFilenameInUse(String filename) {
         boolean result;
-        synchronized (mappaPorteRowSwapServer) {
-            result = mappaPorteRowSwapServer.containsKey(filename);
+        synchronized (mappaAddressPortRowSwapServer) {
+            result = mappaAddressPortRowSwapServer.containsKey(filename);
         }
         return result;
     }
 
-    public boolean isPortInUse(int port) {
+    public boolean isAddressPortInUse(InetAddressPortWrapper wrapper) {
         boolean result;
-        synchronized (mappaPorteRowSwapServer) {
-            result = mappaPorteRowSwapServer.containsValue(port);
+        synchronized (mappaAddressPortRowSwapServer) {
+            result = mappaAddressPortRowSwapServer.containsValue(wrapper);
         }
         return result;
     }
