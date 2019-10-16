@@ -78,7 +78,6 @@ public class DiscoveryServer {
             String richiesta = null;
 
             while (true) {
-                packet.setPort(port);
                 packet.setData(buf, 0, buf.length); //devo risettare ciclicamente il buffer del pacchetto
 
                 try {
@@ -102,7 +101,7 @@ public class DiscoveryServer {
                     if (wrapper == null) { //se il file non esiste lo comunico
                         doStream.writeUTF("Il file richiesto non esiste, quindi non c'è una porta corrispondente\n");
                     } else { //altrimenti restituisco la porta corrisp.
-                        doStream.writeUTF(wrapper.getAddress().getHostAddress()+":"+wrapper.getPort());
+                        doStream.writeUTF(wrapper.getAddress().getHostAddress() + ":" + wrapper.getPort());
                     }
 
                     //setto il contenuto della risposta
@@ -168,7 +167,6 @@ public class DiscoveryServer {
             int response = RESULT_OK;
 
             while (true) {
-                packet.setPort(port);
                 packet.setData(buf, 0, buf.length); //devo risettare ciclicamente il buffer del pacchetto
 
                 try {
@@ -209,6 +207,7 @@ public class DiscoveryServer {
                             if (!reference.isAddressPortInUse(wrapper)) {
                                 //Allora posso registrare il row swap server
                                 reference.putFilenamePortPair(filename, wrapper);
+                                System.out.println("Registrato: " + filename + "; " + wrapper);
                             } else {
                                 response = RESULT_PAIR_IN_USE;
                             }
@@ -222,6 +221,7 @@ public class DiscoveryServer {
                             if (reference.getAddressPortByFilename(filename).equals(wrapper)) {
                                 //Allora posso cancellare il row swap server
                                 reference.removeFilenamePortPair(filename);
+                                System.out.println("Cancellato: " + filename + "; " + wrapper);
                             } else {
                                 response = RESULT_PAIR_NOT_CONSISTENT;
                             }
@@ -255,7 +255,7 @@ public class DiscoveryServer {
     }
 
     //Immutable Object
-    private class InetAddressPortWrapper{
+    private class InetAddressPortWrapper {
         private InetAddress address;
         private int port;
 
@@ -278,12 +278,17 @@ public class DiscoveryServer {
 
         @Override
         public boolean equals(Object obj) {
-            if(obj instanceof InetAddressPortWrapper){
-                InetAddressPortWrapper other = (InetAddressPortWrapper)obj;
+            if (obj instanceof InetAddressPortWrapper) {
+                InetAddressPortWrapper other = (InetAddressPortWrapper) obj;
 
                 return getAddress().equals(other.getAddress()) && getPort() == other.getPort();
             }
             return false;
+        }
+
+        @Override
+        public String toString() {
+            return "(" + address + ":" + port + ')';
         }
     }
 
@@ -326,7 +331,7 @@ public class DiscoveryServer {
         InetAddressPortWrapper wrapper;
 
         synchronized (mappaAddressPortRowSwapServer) {
-             wrapper = mappaAddressPortRowSwapServer.getOrDefault(filename, null);
+            wrapper = mappaAddressPortRowSwapServer.getOrDefault(filename, null);
         }
 
         return wrapper;
@@ -397,6 +402,11 @@ public class DiscoveryServer {
             System.exit(INVALID_DS_PORT);
         }
 
+        if (rowSwapPort == clientPort) {
+            System.out.println("client port == row swap port");
+            System.exit(INV_ERR);
+        }
+
         DiscoveryServer server = null;
 
         try {
@@ -424,4 +434,3 @@ public class DiscoveryServer {
     }
 
 }
-

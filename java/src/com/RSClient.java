@@ -206,6 +206,8 @@ public class RSClient {
     }
 
     public static void main(String[] args) {
+        //RSClient IPDS portDS fileName
+
         //Controllo argomenti inline
         if (args.length != 3) {
             System.out.println("RSClient IPDS portDS fileName");

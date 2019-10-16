@@ -23,6 +23,7 @@ public class RowSwapServer implements Runnable {
     private static final int RECEIVE_CLIENT_ERR = 11;
     private static final int DECODE_CLIENT_ERR = 12;
     private static final int SEND_ERR = 13;
+    private static final int STD_ERR = 14;
 
     //Protocollo DS <--> RowSwapServer
     //Formato richiesta: CMD:FILENAME:IP:PORT
@@ -59,7 +60,7 @@ public class RowSwapServer implements Runnable {
                 return "IP+PORTA NON COINCIDENTE CON FILENAME";
 
             default:
-                return null;
+                return Integer.toString(result);
         }
     }
 
@@ -68,6 +69,8 @@ public class RowSwapServer implements Runnable {
     }
 
     private final Thread myThread;
+    private boolean closed = false;
+    private boolean fullyClosed = false;
 
     private final DatagramSocket socket;
     private final DatagramPacket packet;
@@ -108,6 +111,7 @@ public class RowSwapServer implements Runnable {
 
         //Devo impostare questa opzione, in modo che lo script esterno riesca a riavviare il server.
         this.socket.setReuseAddress(true);
+        this.socket.setSoTimeout(1000);
     }
 
     public void checkFileValidity() {
@@ -157,6 +161,18 @@ public class RowSwapServer implements Runnable {
 
     public void join(long millis) throws InterruptedException {
         myThread.join(millis);
+    }
+
+    public boolean isFullyClosed() {
+        return fullyClosed;
+    }
+
+    public boolean isClosed() {
+        return closed;
+    }
+
+    public void close(){
+        closed = true;
     }
 
     public InetAddress getAddressDS() {
@@ -295,7 +311,8 @@ public class RowSwapServer implements Runnable {
                 doStream.writeUTF(CMD_REGISTER + ":" + filename + ":" + addressRS.getHostAddress() + ":" + portRS);
 
                 packet.setAddress(addressDS);
-                packet.setPort(portRS);
+                packet.setPort(portDS)
+                ;
                 packet.setData(boStream.toByteArray());
             } catch (IOException e) {
                 e.printStackTrace();
@@ -380,12 +397,19 @@ public class RowSwapServer implements Runnable {
 
     @Override
     public void run() {
+        //Devo essere registrato per continuare:
+        if(!isRegistered()){
+            return;
+        }
+
         //Metodo principale del server:
         //Cosa fa?
         //1) REPL dei client
-        //2) In caso di eccezione termina con un errore: se l'errore non è critico rilancio il server con script esterno.
+        //2) In caso di eccezione termina con un errore: se l'errore non è critico rilancio il server con script esterno. (DA IMPLEMENTARE)
 
-        while (true) {
+        //Non deve essere un'istanza già chiusa.
+        //Finchè non chiudo.
+        while (!closed) {
             String richiesta = null;
             String esito = null;
 
@@ -394,10 +418,12 @@ public class RowSwapServer implements Runnable {
 
             try {
                 socket.receive(packet); //attendo una richiesta da un client
-            } catch (IOException e) {
+            } catch (SocketTimeoutException e) {
                 //non dovrebbe entrare se non impostato timeout.
+                continue;
+            } catch (IOException e) {
                 e.printStackTrace();
-                System.exit(RECEIVE_CLIENT_ERR);
+                esito = "Impossibile ricevere messaggio";
             }
 
             try (ByteArrayInputStream biStream = new ByteArrayInputStream(packet.getData(), 0, packet.getLength()); DataInputStream diStream = new DataInputStream(biStream)){
@@ -444,9 +470,11 @@ public class RowSwapServer implements Runnable {
         }
 
         //Rilascio risorse
-        //if(isRegistered()) dismissDiscovery();
-        //socket.close();
+        dismissFromDiscovery();
+        socket.close();
 
+
+        fullyClosed = true;
     }
 
     public static void main(String[] args) {
@@ -514,7 +542,7 @@ public class RowSwapServer implements Runnable {
         server.registerOnDiscovery();
 
         if (!server.isRegistered()) {
-            System.err.println(server.getDiscoveryResultString());
+            System.err.println("Error code: "+server.getDiscoveryResultString());
             System.exit(REG_ERR);
         }
 
@@ -527,7 +555,7 @@ public class RowSwapServer implements Runnable {
         System.out.println("Nome file: " + server.getFilename());
         System.out.println("Path: " + server.getFilePath());
         System.out.println("Numero righe: " + server.getFileLineCount());
-        System.out.println("Attendo terminazione del figlio...");
+//        System.out.println("Digita EOF o 'chiudi' per uscire...");
 
         try {
             server.join();
@@ -535,6 +563,35 @@ public class RowSwapServer implements Runnable {
             e.printStackTrace();
             System.exit(JOIN_ERR);
         }
+
+        //Non si chiude
+
+//        //Se trovo un EOF in System.in lo interpreto come uscita.
+//
+//        BufferedReader stdReader = new BufferedReader(new InputStreamReader(System.in));
+//
+//        try {
+//            while(true){
+//                server.join(1000);                            //Faccio il join per massimo 1 secondo.
+//
+//                String readLine = stdReader.readLine();
+//                System.out.println(readLine);
+//
+//                if("chiudi".equalsIgnoreCase(readLine) || readLine == null){
+//                    server.close();    //Ho ricevuto "chiudi" o EOF, termino il server.
+//                    System.out.println("Chiusura in corso...");
+//                }
+//
+//                if(server.isFullyClosed()) break;                   //Il server si è fermato: esco.
+//            }
+//        } catch (InterruptedException e) {
+//            e.printStackTrace();
+//            System.exit(JOIN_ERR);
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//            System.exit(STD_ERR);
+//        }
+
 
     }
 
